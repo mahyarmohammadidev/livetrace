@@ -16,11 +16,11 @@ import (
 
 func main() {
 	cfg := config.Load()
-
-	store := redis.NewRedisStore("localhost:6379", "", 0, 120*time.Second)
+	locationTTL := time.Duration(cfg.LocationTTLSeconds) * time.Second
+	store := redis.NewRedisStore(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB, locationTTL)
 	writer := redis.NewRedisWriter(store, redis.RedisWriterConfig{
 		QueueSize: 100_000,
-		Workers:   8,
+		Workers:   4,
 	})
 	store.StartCleanupLoop(10 * time.Second)
 	metrics := socket.NewMetrics()
