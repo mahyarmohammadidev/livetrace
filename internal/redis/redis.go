@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"time"
 
+	_ "embed"
+
 	goredis "github.com/redis/go-redis/v9"
 )
 
@@ -31,46 +33,11 @@ type Location struct {
 	TS       int64
 }
 
-const saveLocationLua = `
--- KEYS[1] = geoKey
--- KEYS[2] = userKey
--- KEYS[3] = lastSeenKey
--- ARGV[1] = userID
--- ARGV[2] = lng
--- ARGV[3] = lat
--- ARGV[4] = accuracy
--- ARGV[5] = ts
--- ARGV[6] = ttlMs
-
-redis.call('GEOADD', KEYS[1], ARGV[2], ARGV[3], ARGV[1])
-
-redis.call('HSET', KEYS[2],
-  'lat', ARGV[3],
-  'lng', ARGV[2],
-  'accuracy', ARGV[4],
-  'ts', ARGV[5]
-)
-
-local ttl = tonumber(ARGV[6])
-if ttl and ttl > 0 then
-  redis.call('PEXPIRE', KEYS[2], ttl)
-else
-  redis.call('PERSIST', KEYS[2])
-end
-
-redis.call('ZADD', KEYS[3], ARGV[5], ARGV[1])
-
-return 1
-`
+//go:embed storage.lua
+var storeScript string
 
 func NewRedisStore(addr, password string, db int, ttl time.Duration) *RedisStore {
-	poolSize := runtime.GOMAXPROCS(0) * 16
-	if poolSize < 32 {
-		poolSize = 32
-	}
-	if poolSize > 128 {
-		poolSize = 128
-	}
+	poolSize := min(max(runtime.GOMAXPROCS(0)*16, 32), 128)
 
 	rdb := goredis.NewClient(&goredis.Options{
 		Addr:     addr,
@@ -101,7 +68,7 @@ func NewRedisStore(addr, password string, db int, ttl time.Duration) *RedisStore
 
 		inflight: make(chan struct{}, poolSize),
 
-		saveScript: goredis.NewScript(saveLocationLua),
+		saveScript: goredis.NewScript(storeScript),
 	}
 }
 
